@@ -1,77 +1,196 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import * as Location from 'expo-location';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { StyleSheet, View, Text, TouchableOpacity, Image, ImageBackground } from 'react-native';
+import { useRouter } from 'expo-router';
 import { Audio } from 'expo-av';
 import * as DocumentPicker from 'expo-document-picker';
 
 function Jogo() {
-    // Autenticação: exibe tela de login/cadastro se não houver token
+  // Função para navegação para login usando expo-router
+  const router = useRouter();
+  const handleLoginPress = () => {
+    router.push('/login');
+  };
+  // Função utilitária para formatar o tempo do cronômetro
+  function formatarTempo(ms) {
+    const min = String(Math.floor(ms / 60000)).padStart(2, '0');
+    const sec = String(Math.floor((ms % 60000) / 1000)).padStart(2, '0');
+    const milis = String(Math.floor((ms % 1000) / 10)).padStart(2, '0');
+    return { min, sec, milis };
+  }
+  // TODOS os hooks SEMPRE no topo
+  const [hora, setHora] = useState('');
   const [token, setToken] = useState(null);
   const [checkingToken, setCheckingToken] = useState(true);
-useEffect(() => {
+  const [userMusicas, setUserMusicas] = useState([]);
+  const [userMusicasLoading, setUserMusicasLoading] = useState(false);
+  const [audiusTracks, setAudiusTracks] = useState([]);
+  const [audiusLoading, setAudiusLoading] = useState(true);
+  const [trackIdx, setTrackIdx] = useState(0);
+  const [sound, setSound] = useState(null);
+  const [tocando, setTocando] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [clima, setClima] = useState({ temperatura: '--', icone: '--' });
+    // Estados para músicas locais e player
+    const [localTracks, setLocalTracks] = useState([]);
+    const [currentLocalTrack, setCurrentLocalTrack] = useState(null);
+    const [showLocalList, setShowLocalList] = useState(false);
+  // Estados para cronômetro
+  const [cronometro, setCronometro] = useState(0);
+  const intervalRef = useRef(null);
+
+  // Iniciar cronômetro
+  const iniciarCronometro = () => {
+    if (intervalRef.current) return;
+    intervalRef.current = setInterval(() => {
+      setCronometro(prev => prev + 10);
+    }, 10);
+  };
+
+  // Pausar cronômetro
+  const pausarCronometro = () => {
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
+    }
+  };
+
+  // Zerar cronômetro
+  const zerarCronometro = () => {
+    setCronometro(0);
+    pausarCronometro();
+  };
+
+  useEffect(() => {
+    return () => {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+    };
+  }, []);
+
+  const fetchAudiusTracks = useCallback(async () => {
+    setAudiusLoading(true);
+    try {
+      const res = await fetch('https://discoveryprovider.audius.co/v1/tracks/search?query=lofi&app_name=PROGRAMACAO-TCC&limit=20&with_users=true');
+      const json = await res.json();
+      // Filtra faixas que têm stream_url ou permalink válido
+      const tracks = (json.data || []).filter(track => track.stream_url || track.permalink);
+      setAudiusTracks(tracks);
+    } catch (e) {
+      setAudiusTracks([]);
+    }
+    setAudiusLoading(false);
+  }, []);
+
+  useEffect(() => {
+    fetchAudiusTracks();
+  }, [fetchAudiusTracks]);
+
+  useEffect(() => {
     (async () => {
-      const t = await AsyncStorage.getItem('token');
+      let t = await AsyncStorage.getItem('token');
       setToken(t);
       setCheckingToken(false);
     })();
   }, []);
 
-  if (checkingToken) return null;
-  if (!token) {
-    const Login = require('./login').default;
-    return <Login onLogin={async (t) => { await AsyncStorage.setItem('token', t); setToken(t); }} />;
-  }
-  //
+  // Buscar músicas do usuário logado
+  const BACKEND_IP = 'http://192.168.0.100:3001'; // Altere para o IP da sua máquina
+  const fetchUserMusicas = async () => {
+    setUserMusicasLoading(true);
+    try {
+      const token = await AsyncStorage.getItem('token');
+      const res = await fetch(`${BACKEND_IP}/musicas`, {
+        headers: { 'Authorization': token }
+      });
+      const data = await res.json();
+      setUserMusicas(data);
+    } catch (e) {
+      setUserMusicas([]);
+    }
+    setUserMusicasLoading(false);
+  };
 
-    // Músicas salvas do usuário logado
-    const [userMusicas, setUserMusicas] = useState([]);
-    const [userMusicasLoading, setUserMusicasLoading] = useState(false);
+  useEffect(() => {
+    fetchUserMusicas();
+  }, []);
 
-    // Buscar músicas do usuário logado
-    const BACKEND_IP = 'http://192.168.0.100:3001'; // Altere para o IP da sua máquina
-    const fetchUserMusicas = async () => {
-      setUserMusicasLoading(true);
-      try {
-        const token = await AsyncStorage.getItem('token');
-        const res = await fetch(`${BACKEND_IP}/musicas`, {
-          headers: { 'Authorization': token }
-        });
-        const data = await res.json();
-        setUserMusicas(data);
-      } catch (e) {
-        setUserMusicas([]);
-      }
-      setUserMusicasLoading(false);
+  useEffect(() => {
+    const updateHora = () => {
+      const now = new Date();
+      setHora(now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
     };
+    updateHora();
+    const timer = setInterval(updateHora, 1000);
+    return () => clearInterval(timer);
+  }, []);
 
-    useEffect(() => {
-      fetchUserMusicas();
-    }, []);
-
-    // Salvar música local no backend
-    const handleSaveLocalTrack = async (track) => {
+  useEffect(() => {
+    async function getLocationAndFetchClima() {
       try {
-        const token = await AsyncStorage.getItem('token');
-        const res = await fetch(`${BACKEND_IP}/musicas`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': token
-          },
-          body: JSON.stringify({ nome: track.name, caminho: track.uri })
-        });
-        if (res.ok) {
-          await fetchUserMusicas();
-          alert('Música salva!');
+        let { status } = await Location.requestForegroundPermissionsAsync();
+        if (status !== 'granted') {
+          alert('Permissão de localização negada!');
+          return;
+        }
+        let location = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Highest });
+        const { latitude, longitude } = location.coords;
+        const apiKey = 'f69ab47389319d7de688f72898bde932';
+        const url = `https://api.openweathermap.org/data/2.5/weather?lat=${latitude}&lon=${longitude}&appid=${apiKey}&units=metric&lang=pt_br`;
+        const res = await fetch(url);
+        const data = await res.json();
+        if (data.main && data.weather) {
+          let status = data.weather[0].main;
+          let icone = '';
+          if (status === 'Clear') icone = '☀️ Sol';
+          else if (status === 'Rain' || status === 'Drizzle') icone = '🌧️ Chuva';
+          else if (status === 'Clouds') icone = '☁️ Nublado';
+          else icone = `${status}`;
+          setClima({
+            temperatura: `${Math.round(data.main.temp)}°C`,
+            icone: icone
+          });
         } else {
-          alert('Erro ao salvar música.');
+          setClima({
+            temperatura: '--',
+            icone: '--'
+          });
+          alert('Não foi possível obter o clima. Verifique a chave da API ou tente novamente.');
         }
       } catch (e) {
+        setClima({ temperatura: '--', icone: '--' });
+        alert('Erro ao obter o clima.');
+      }
+    }
+    getLocationAndFetchClima();
+  }, []);
+
+  // Só depois de TODOS os hooks, faça returns condicionais:
+  // Removeu checagem de token e devMode. O jogo sempre renderiza normalmente.
+
+  // Salvar música local no backend
+  const handleSaveLocalTrack = async (track) => {
+    try {
+      const token = await AsyncStorage.getItem('token');
+      const res = await fetch(`${BACKEND_IP}/musicas`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': token
+        },
+        body: JSON.stringify({ nome: track.name, caminho: track.uri })
+      });
+      if (res.ok) {
+        await fetchUserMusicas();
+        alert('Música salva!');
+      } else {
         alert('Erro ao salvar música.');
       }
-    };
+    } catch (e) {
+      alert('Erro ao salvar música.');
+    }
+  };
 
   // Selecionar música do dispositivo
   const handleAddLocalMusic = async () => {
@@ -94,33 +213,7 @@ useEffect(() => {
   };
 
   // Audius API
-  const [audiusTracks, setAudiusTracks] = useState([]);
-  const [audiusLoading, setAudiusLoading] = useState(true);
-  const [trackIdx, setTrackIdx] = useState(0);
-
-  // Busca faixas lofi do Audius
-  const fetchAudiusTracks = useCallback(async () => {
-    setAudiusLoading(true);
-    try {
-      const res = await fetch('https://discoveryprovider.audius.co/v1/tracks/search?query=lofi&app_name=PROGRAMACAO-TCC&limit=20&with_users=true');
-      const json = await res.json();
-      // Filtra faixas que têm stream_url ou permalink válido
-      const tracks = (json.data || []).filter(track => track.stream_url || track.permalink);
-      setAudiusTracks(tracks);
-    } catch (e) {
-      setAudiusTracks([]);
-    }
-    setAudiusLoading(false);
-  }, []);
-
-  useEffect(() => {
-    fetchAudiusTracks();
-  }, [fetchAudiusTracks]);
-
-  // Player Audius
-  const [sound, setSound] = useState(null);
-  const [tocando, setTocando] = useState(false);
-  const [loading, setLoading] = useState(false);
+  // ...continuação da função Jogo...
         // ...continuação da função Jogo...
 
   // (Removidas duplicações de estados e funções)
@@ -220,25 +313,12 @@ useEffect(() => {
 
   const handlePrev = async () => {
   if (audiusTracks.length === 0) return;
-  let prevIdx = (trackIdx - 1 + audiusTracks.length) % audiusTracks.length;
-  setTrackIdx(prevIdx);
-  const track = audiusTracks[prevIdx];
-  const streamUrl = track.stream_url || (track.permalink ? track.permalink + '/stream' : null);
-  await playAudiusTrack(streamUrl);
+    let prevIdx = (trackIdx - 1 + audiusTracks.length) % audiusTracks.length;
+    setTrackIdx(prevIdx);
+    const track = audiusTracks[prevIdx];
+    const streamUrl = track.stream_url || (track.permalink ? track.permalink + '/stream' : null);
+    await playAudiusTrack(streamUrl);
   };
-  const [clima, setClima] = useState({ temperatura: '--', icone: '--' });
-  const [hora, setHora] = useState('');
-
-  useEffect(() => {
-    const updateHora = () => {
-      const now = new Date();
-      setHora(now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
-    };
-    updateHora();
-    const timer = setInterval(updateHora, 1000);
-    return () => clearInterval(timer);
-  }, []);
-
   useEffect(() => {
     async function getLocationAndFetchClima() {
       let { status } = await Location.requestForegroundPermissionsAsync();
@@ -246,7 +326,7 @@ useEffect(() => {
         alert('Permissão de localização negada!');
         return;
       }
-  let location = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Highest });
+      let location = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Highest });
       const { latitude, longitude } = location.coords;
       const apiKey = 'f69ab47389319d7de688f72898bde932';
       const url = `https://api.openweathermap.org/data/2.5/weather?lat=${latitude}&lon=${longitude}&appid=${apiKey}&units=metric&lang=pt_br`;
@@ -274,9 +354,25 @@ useEffect(() => {
     getLocationAndFetchClima();
   }, []);
 
-
   return (
     <ImageBackground source={require('../assets/images/background2.gif')} style={styles.container} resizeMode="cover">
+      {/* Botão de login no canto superior direito */}
+      <TouchableOpacity
+        style={{
+          position: 'absolute',
+          top: 32,
+          right: 24,
+          backgroundColor: 'rgba(255,255,255,0.15)',
+          paddingVertical: 8,
+          paddingHorizontal: 18,
+          borderRadius: 12,
+          zIndex: 20,
+        }}
+        onPress={handleLoginPress}
+        activeOpacity={0.7}
+      >
+        <Text style={{ color: '#ffb300', fontWeight: 'bold', fontSize: 16 }}>Login</Text>
+      </TouchableOpacity>
       {/* Menu hamburger opaco */}
       <TouchableOpacity style={styles.hamburger} activeOpacity={0.5}>
         <View style={styles.burgerLine} />
@@ -310,9 +406,9 @@ useEffect(() => {
                 );
               })()}
               <View style={{flexDirection: 'row', gap: 16, marginTop: 12, justifyContent: 'center'}}>
-                <TouchableOpacity onPress={() => setCronometroAtivo(true)} style={styles.cronometroBtn}><Text style={styles.cronometroBtnTexto}>Iniciar</Text></TouchableOpacity>
-                <TouchableOpacity onPress={() => setCronometroAtivo(false)} style={styles.cronometroBtn}><Text style={styles.cronometroBtnTexto}>Pausar</Text></TouchableOpacity>
-                <TouchableOpacity onPress={() => {setCronometro(0); setCronometroAtivo(false); setCronometroInicio(null);}} style={styles.cronometroBtn}><Text style={styles.cronometroBtnTexto}>Zerar</Text></TouchableOpacity>
+                <TouchableOpacity onPress={iniciarCronometro} style={styles.cronometroBtn}><Text style={styles.cronometroBtnTexto}>Iniciar</Text></TouchableOpacity>
+                <TouchableOpacity onPress={pausarCronometro} style={styles.cronometroBtn}><Text style={styles.cronometroBtnTexto}>Pausar</Text></TouchableOpacity>
+                <TouchableOpacity onPress={zerarCronometro} style={styles.cronometroBtn}><Text style={styles.cronometroBtnTexto}>Zerar</Text></TouchableOpacity>
               </View>
             </View>
           </View>

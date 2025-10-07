@@ -10,6 +10,8 @@ export default function Login({ onLogin }) {
   const [error, setError] = useState('');
   const [isRegister, setIsRegister] = useState(false);
 
+  // ...existing code...
+
   const handleSubmit = async () => {
     setError('');
   const url = isRegister ? `${BACKEND_IP}/register` : `${BACKEND_IP}/login`;

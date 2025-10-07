@@ -21,9 +21,12 @@ export default function Index() {
         duration: 1500,
         useNativeDriver: true,
       }).start(() => {
+        // Se modo dev, vai para /entrada normalmente
+        // Se modo prod, vai para /entrada normalmente
+        // (Aqui pode customizar para pular etapas no dev)
         router.replace("/entrada");
       });
-    }, 4000);
+  }, 4000); // Splash padrão
 
     return () => clearTimeout(timeout);
   }, []);

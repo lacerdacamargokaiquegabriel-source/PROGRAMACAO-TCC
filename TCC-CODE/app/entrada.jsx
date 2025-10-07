@@ -41,7 +41,7 @@ export default function Entrada() {
       duration: 1500,
       useNativeDriver: true,
     }).start(() => {
-      router.replace("/jogo");
+        router.replace("/jogo");
     });
   };
 
