@@ -274,9 +274,6 @@ useEffect(() => {
     getLocationAndFetchClima();
   }, []);
 
-  useEffect(() => {
-    // Nenhuma configuração TrackPlayer, apenas expo-av
-  }, []);
 
   return (
     <ImageBackground source={require('../assets/images/background2.gif')} style={styles.container} resizeMode="cover">
