@@ -1,5 +1,5 @@
+//IMPORTS
 import AsyncStorage from '@react-native-async-storage/async-storage';
-
 import * as Location from 'expo-location';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { StyleSheet, View, Text, TouchableOpacity, Image, ImageBackground } from 'react-native';
@@ -7,19 +7,21 @@ import { useRouter } from 'expo-router';
 import { Audio } from 'expo-av';
 import * as DocumentPicker from 'expo-document-picker';
 
+//LINKAR COM O LOGIN
 function Jogo() {
-  // Função para navegação para login usando expo-router
   const router = useRouter();
   const handleLoginPress = () => {
     router.push('/login');
   };
-  // Função utilitária para formatar o tempo do cronômetro
+
   function formatarTempo(ms) {
-    const min = String(Math.floor(ms / 60000)).padStart(2, '0');
-    const sec = String(Math.floor((ms % 60000) / 1000)).padStart(2, '0');
-    const milis = String(Math.floor((ms % 1000) / 10)).padStart(2, '0');
-    return { min, sec, milis };
+  const totalSeconds = Math.floor(ms / 1000);
+  const hours = String(Math.floor(totalSeconds / 3600)).padStart(2, '0');
+  const min = String(Math.floor((totalSeconds % 3600) / 60)).padStart(2, '0');
+  const sec = String(totalSeconds % 60).padStart(2, '0');
+  return { hours, min, sec };
   }
+
   // TODOS os hooks SEMPRE no topo
   const [hora, setHora] = useState('');
   const [token, setToken] = useState(null);
@@ -45,8 +47,8 @@ function Jogo() {
   const iniciarCronometro = () => {
     if (intervalRef.current) return;
     intervalRef.current = setInterval(() => {
-      setCronometro(prev => prev + 10);
-    }, 10);
+      setCronometro(prev => prev + 1000);
+    }, 1000);
   };
 
   // Pausar cronômetro
@@ -397,11 +399,10 @@ function Jogo() {
           <View style={{flex: 1, justifyContent: 'center', alignItems: 'center'}}>
             <View style={styles.cronometroArea}>
               {(() => {
-                const { min, sec, milis } = formatarTempo(cronometro);
+                const { hours, min, sec } = formatarTempo(cronometro);
                 return (
                   <Text style={styles.cronometroTexto}>
-                    {min}:{sec}
-                    <Text style={styles.cronometroMilis}>{milis}</Text>
+                    {hours}:{min}:{sec}
                   </Text>
                 );
               })()}
@@ -532,21 +533,23 @@ const styles = StyleSheet.create({
     marginVertical: 24,
   },
   cronometroTexto: {
-    fontSize: 64,
-    color: '#ffb300',
-    fontWeight: 'bold',
-    letterSpacing: 2,
-    textAlign: 'center',
-    marginBottom: 8,
+  fontSize: 64,
+  color: '#ffb300',
+  fontWeight: 'bold',
+  letterSpacing: 2,
+  textAlign: 'center',
+  marginBottom: 8,
+  flexDirection: 'row',
+  alignItems: 'flex-end',
   },
   cronometroMilis: {
-    fontSize: 32,
-    color: '#ffb300',
-    fontWeight: 'bold',
-    opacity: 0.7,
-    marginLeft: 4,
-    position: 'relative',
-    top: 8,
+  fontSize: 32,
+  color: '#ffb300',
+  fontWeight: 'bold',
+  opacity: 0.7,
+  marginLeft: 4,
+  position: 'relative',
+  top: 16,
   },
   cronometroBtn: {
     backgroundColor: 'rgba(255,255,255,0.08)',
